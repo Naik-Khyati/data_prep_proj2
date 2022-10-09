@@ -1,0 +1,280 @@
+---
+title: "Project 2: Prepare data for analysis"
+author: "Khyati Naik"
+date: "`r Sys.Date()`"
+---
+
+The goal of this assignment is to give you practice in preparing different datasets for downstream analysis work.
+  
+I will be using following datasets from week 6 discussion forums.
+
+[Income limits data](https://www.huduser.gov/portal/datasets/il.html#2022_data) - Khyati Naik (me)   
+[Zillow Home Values](https://www.zillow.com/research/data/) - Sanielle Worrell  
+[Gun violence data](https://www.kaggle.com/datasets/jameslko/gun-violence-data?resource=download) - Keeno Glanville  
+  
+I downloaded the data from above websites and have saved it in my github repository. I will be reading in daatsets from my github repository to perform data manipulation and analysis.
+
+# Income limts data - Khyati Naik
+
+## Research questions
+1. What is the trend of very low income limit for households of different sizes in metro vs non metro areas?  
+2. By what proportion is the very low income limit higher in metro areas vs non metro areas. Does this proportion vary by different household size?
+
+### Load packages
+
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+### Read the data file from github
+
+```{r}
+#provide the github data path
+dt_inc_lim <- "https://raw.githubusercontent.com/Naik-Khyati/data_prep_proj2/main/data/Section8-FY22.csv"
+
+raw_dt_inc_lim <- read.csv(dt_inc_lim, sep=",", stringsAsFactors=FALSE)
+
+glimpse(raw_dt_inc_lim)
+```
+
+The dataset has 4765 rows and 35 columns.  
+
+### Select metro column and only columns that start with l50_ which represent very low income limits
+
+```{r}
+vli_wide <- raw_dt_inc_lim %>%  select(metro, starts_with('l50_')) %>% 
+  group_by (metro) %>% 
+  summarise(across(everything(), list(mean)))
+```
+
+
+### Convert the data from wide to long format to plot the chart
+
+```{r}
+vli_long <- vli_wide %>% gather("vli_cat","mean_vli", 2:9)
+head(vli_long)
+```
+
+### Convert metro variable to character
+
+Since the fill variable has to be of character to create a chart.  
+
+```{r}
+# converting integer to character to be used in fill for the chart
+vli_long$metro = as.character(vli_long$metro)
+```
+
+### Plot the chart to answer first research question
+
+```{r}
+ggplot(vli_long, aes(x = vli_cat, y = mean_vli, fill = metro )) + 
+geom_bar(position = "dodge",stat = "identity") +
+xlab("# Person in Family") +
+ylab("Mean Very Low Income") +
+theme_minimal() 
+```
+
+Income limit for household of 1 member is the lowest and income limit for household of 8 members is the highest. For all sizes of families (1 to 8), metro income limit is higher than non metro income limit.
+
+### Prepare data to answer second research question
+
+```{r}
+vli_metro_wide <- vli_long %>% spread(metro,mean_vli)
+vli_metro_wide <- vli_metro_wide %>% rename('non_metro'='0', 'metro'='1') %>% mutate(pct_met_high = (metro/non_metro-1)*100)
+head(vli_metro_wide)
+```
+Mean income in metro areas is about 22% higher than non metro areas for very low income households. Across all family size (1 to 8), mean income is consistently higher by the same proportion of 22%.
+
+
+
+
+# Zillow home values data - Sanielle Worrell
+
+## Research questions
+
+1. What is the trend in home prices in Maryland, North Carolina and Virginia states?  
+2. Which state has highest average home prices across USA for 2022 ?
+
+```{r}
+#provide the github data path
+dt_zhv <- "https://raw.githubusercontent.com/Naik-Khyati/data_prep_proj2/main/data/State_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
+
+raw_dt_zhv <- read.csv(dt_zhv, sep=",", stringsAsFactors=FALSE)
+
+glimpse(raw_dt_zhv)
+```
+
+Zillow homw value dataset has 51 rows and 277 columns.
+
+### Convert data from wide to long
+
+```{r}
+zhv_long <- raw_dt_zhv %>% 
+  select(-RegionID,	-SizeRank,	-RegionType,	-StateName) %>% 
+  gather('period','home_val',2:ncol(.))
+
+glimpse(zhv_long)
+```
+
+
+
+### Create a date variable to plot time series trend
+
+```{r}
+zhv_long_dt <- zhv_long %>% 
+  separate(period, c("yr", "mo" , "day"),"\\.")
+  
+zhv_long_dt$yr <-  as.numeric(gsub('X', '', zhv_long_dt$yr))
+zhv_long_dt$mo <-  as.numeric(zhv_long_dt$mo)
+zhv_long_dt$date <- as.Date(with(zhv_long_dt, paste(yr, mo, 1,sep="-")), "%Y-%m-%d")
+
+# keep only numeric values in yr column
+
+head(zhv_long_dt)
+```
+
+### Plot trend chart to answer first research question
+```{r}
+zhv_long_ts <- zhv_long_dt %>% filter (RegionName %in% c('Virginia', 'Maryland', 'North Carolina'))
+
+ggplot(data = zhv_long_ts, aes(x=date, y=home_val)) + geom_line(aes(colour=RegionName)) + theme_minimal() 
+```
+
+It is an interesting trend chart, as we can see that average home prices in North Carolina and Virginia were nearly the same in 2000. But, by 2022, Virginia home prices are much higher than North Carolina home prices. Maryland has the highest average home prices, among the 3 states.
+
+### Prepare data for answering second research question
+
+```{r}
+zhv_long_reg  <- zhv_long_dt %>% 
+  filter (yr==max(zhv_long_dt$yr)) %>% 
+  group_by (RegionName) %>% 
+  summarise(mean_hv = mean(home_val)) %>% 
+  arrange(mean_hv)
+
+glimpse(zhv_long_reg)
+```
+
+### Plot the chart to answer second research question
+
+```{r}
+ggplot(zhv_long_reg, aes(x = reorder(RegionName,-mean_hv), y = mean_hv )) + 
+geom_bar(position = "dodge",stat = "identity", fill="steelblue") +
+xlab("State") +
+ylab("Mean Home Value") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+In 2022, Hawaii has the highest home prices. It is followed by California and DC.  
+West Virginia has the lowest home prices followed by Mississippi.
+
+# Gun Violence Data - Keeno Glanville
+
+## Research questions
+
+1. What is the yearly trend in gun violence incidents?  
+2. What is the trend in share of person injured vs killed in gun violence incidents?  
+3. Which state has the highest gun violence incidents?
+
+### Read the data file
+
+```{r}
+#provide the github data path
+dt_gv <- "https://raw.githubusercontent.com/Naik-Khyati/data_prep_proj2/main/data/gun-violence-data_01-2013_03-2018.csv"
+
+raw_dt_gv <- read.csv(dt_gv, sep=",", stringsAsFactors=FALSE)
+
+glimpse(raw_dt_gv)
+```
+
+This data set has 239,677 rows and 23 columns.
+
+### Convert the character type date into date format
+
+```{r}
+raw_dt_gv <- raw_dt_gv %>% mutate(date_fmt = as.Date(date, format= "%m/%d/%Y"))
+```
+
+### Extract year from date
+
+```{r}
+raw_dt_gv$year <- as.numeric(format(raw_dt_gv$date_fmt,'%Y'))
+```
+
+### Prepare dataset to create a plot
+
+```{r}
+yr_inci_cnt <- raw_dt_gv %>% group_by(year) %>% summarise(incid_count=n())
+```
+
+### Plot chart to answer first research question
+
+```{r}
+ggplot(yr_inci_cnt, aes(x = year, y = incid_count )) + 
+geom_bar(position = "dodge",stat = "identity", fill="darkgreen") +
+xlab("year") +
+ylab("# Incident") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+There were fewest incidents in 2013. There was a spike in number of incidents in 2014 where incidents rose to above 50,000. Since, 2014, incidents have been on an increasing trend. However, in 2018, we see a drop in number of incidents.
+
+### Convert data from wide to long to plot year wise number of person impacted
+
+```{r}
+gv_long_dt <- raw_dt_gv %>% select (year,n_injured,n_killed) %>% 
+  group_by(year) %>%  summarise_each(list(sum)) %>%
+  gather('impact_type','nbr_impact',2:3)
+```
+
+### Add impact type share by year to have labels on plot
+
+```{r}
+gv_long_dt <- gv_long_dt %>% group_by (year) %>% 
+  mutate(impact_share = nbr_impact / sum(nbr_impact))
+```
+
+### Plot to answer second research question
+
+```{r}
+ggplot(gv_long_dt, aes(x = year, y = nbr_impact, fill=impact_type )) +
+geom_bar(stat = "identity") +
+geom_text(aes(label = paste0(round(impact_share * 100), '%')),
+            position = position_stack(vjust = 0.5)) +
+xlab("year") +
+ylab("# of impacted person") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### Find unique values in state column
+
+```{r}
+unique(raw_dt_gv$state)
+```
+
+### Prepare data for incidents by state
+
+```{r}
+state_gv <- raw_dt_gv %>% group_by(state) %>% summarise(incid_count = n())
+```
+
+### Plot state wise number of persons impacted by incidents to answer third research question
+
+```{r}
+ggplot(state_gv, aes(x = reorder(state,-incid_count), y = incid_count )) + 
+geom_bar(position = "dodge",stat = "identity", fill="steelblue") +
+xlab("State") +
+ylab("Gun Violence Incident Count") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+  
+Illinois has the most number of incidents followed by California, Florida and Texas.  
+Hawaii, Vermont and Wyoming has fewest number of incidents.
+
+# Conclusion
+
+We prepared 3 different wide datasets to answer corresponding research questions. Gun Violence dataset had nearly 240,000 rows, whereas Zillow home value data has 277 columns. Thus, I got the opportunity to work with relatively large dataset, which were wide too.  
+  
+In this project, I performed various data manipulation tasks such as string split, string substitution ,conversion from one data type to another, creating a date variable from multiple columns, selecting only few columns based on starting characters, converting data from wide to long and vice versa, aggregating and summarizing the data, adding new columns to the data frame, subsetting the data, sorting the data etc. Moreover, I also created stack  and line charts to answer to answer research questions.
